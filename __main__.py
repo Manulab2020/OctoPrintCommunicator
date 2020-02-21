@@ -60,7 +60,7 @@ def getJsonNameValuePair(jsonObj, name, value=None):
 i = 0
 
 importPrinterList()
-print(opcs[i].login("manulab", "propanautomat"))
+###print(opcs[i].login("USERNAME", "PASSWORD"))###
 
 opcStatus = opcs[i].getPrinterStatus()
 print(opcStatus)
