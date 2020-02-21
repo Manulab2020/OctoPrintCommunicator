@@ -130,4 +130,4 @@ dmypy.json
 # OctoPrintCommunicator project specific files:
 ListOfPrinters.csv
 PrinterStatus.csv
-ErrorLog.txt
+Log.txt

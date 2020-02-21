@@ -4,10 +4,11 @@ For those simply looking for a python-based Octoprint client, there are probably
 
 ### Main idea
 This program is our monument to laziness and flexibility. 
-It is meant to run natively on an IPC connected to industrial automation equipment, so as to save us the hardships of handling all communications using IEC 61131-3-compliant languages.
-When initialized, it parses a CSV containing IP addresses and API keys of any number of Octoprint-running Raspberry Pis, then connects to them. Printer data of interest is then exported to another CSV.
+It is meant to run natively on an Omron IPC connected to industrial automation equipment, so as to save us the hardships of handling all communications using IEC 61131-3-compliant languages.
+When initialized, a CSV containing Octopi instances and API keys are parsed and used to create as many client objects as there are in the list.
+These clients then read and store the status of each printer, saving them to a suitable file format to be read by the IPC.
 
 ### Down the line
-Current plans are to include the ability to request a print job externally. This will probably be done by parsing strings received over UDP.
+Current plans are to include the ability to request a print job from other equipment.
 
 *Copyright © 2020 Fredrik Siem Taklo. MIT License.*
