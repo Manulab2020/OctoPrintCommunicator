@@ -27,7 +27,6 @@ class OctoPrintClient:
                             format='%(asctime)s %(levelname)s %(name)s %(message)s')
         self.logger = logging.getLogger(__name__)
 
-        #requests.adapters.DEFAULT_RETRIES = 1 # Set max retries when attempting to connect to printers
 
     def get(self, url, headers=None, timeout=1):
         '''
@@ -41,7 +40,7 @@ class OctoPrintClient:
             #print("ERROR: Pi is not connected!")
             print(self.logger.error("Cannot connect to Raspberry Pi"))
             self.logger.error(e)
-            return None
+
 
     def post(self, url, headers=None, data=None, json=None, timeout=1):
         '''
@@ -54,8 +53,6 @@ class OctoPrintClient:
         except ConnectionError as e:
             self.logger.error("Cannot connect to Raspberry Pi")
             self.logger.error(e)
-            return None
-
 
 
     def printDebugInfo(self):
@@ -67,6 +64,7 @@ class OctoPrintClient:
         print("Username: " + self.username + ", ")
         print("Password: " + self.password + ", ")
 
+
     def login(self):
         '''
         Log into Octoprint on the specified IP address
@@ -74,11 +72,12 @@ class OctoPrintClient:
         '''
         url = "http://" + self.ipAddress + "/api/login"
         json = {"user": self.username, "pass": self.password}
-        try:
-            r = requests.post(url, json=json)
+        r = self.post(url, json=json)
+        if r is not None:
             return r.text
-        except ConnectionError as e:
-            self.logger.error("login() " + e)
+        else:
+            self.logger.error(str(self.ipAddress) + " Login response: No connection to Pi")
+
 
     def logout(self):
         '''
@@ -87,13 +86,18 @@ class OctoPrintClient:
         Returns response as string.
         '''
         url = "http://" + self.ipAddress + "/api/logout"
-        r = requests.post(url)
-        return r.text
+        r = self.post(url)
+        if r is not None:
+            return r.text
+        else:
+            self.logger.error(str(self.ipAddress) + " Logout response: No connection to Pi")
+
 
     def connectToPrinter(self):
         '''
         Connect to the 3D printer over USB. Default values are used.
         Returns response code as integer.
+        Note that establishing connection may take several seconds.
         TODO: Seems to return HTTP 204 no matter what. Investigate.
         '''
         url = "http://" + self.ipAddress + "/api/connection"
@@ -103,7 +107,8 @@ class OctoPrintClient:
         if r is not None:
             return r.status_code
         else:
-            return "No connection"
+            self.logger.error(str(self.ipAddress) + " ConnectToPrinter response: No connection to Pi")
+
 
     def disconnectFromPrinter(self):
         '''
@@ -112,30 +117,33 @@ class OctoPrintClient:
         '''
         url = "http://" + self.ipAddress + "/api/connection"
         headers = {"Content-Type": "application/json", "X-Api-Key": self.apiKey}
-        payload = {"command": "connect"}
-        r = requests.post(url, headers=headers, json=payload)
-        return r.status_code
+        json = {"command": "disconnect"}
+        r = self.post(url, headers=headers, json=json)
+        if r is not None:
+            return r.status_code
+        else:
+            self.logger.error(str(self.ipAddress) + " DisconnectFromPrinter response: No connection to Pi")
+
 
     def isPrinterConnected(self):
         '''
         Check if the specified Pi is connected to the Printer.
-        Returns: True if connected, False if not
+        Returns: True if connected, False if not, None if Pi cannot be reached
         '''
         url = "http://" + self.ipAddress + "/api/connection"
         headers = {"X-Api-Key": self.apiKey}
 
-        try:
-            r = requests.get(url, headers=headers, timeout=1) # Throw timeout exception after X seconds
+        r = self.get(url, headers=headers)
+        if r is not None:
             rJson = json.loads(r.text)
 
             if (rJson["current"]["state"]) == "Operational": # Can be Closed or Operational
-                return True
+                    return True
             else:
-                return False
-        except ConnectionError as e:
-            self.logger.error(print("Cannot connect to Raspberry Pi"))
-            self.logger.error(e)
-            return False
+                    return False
+        else:
+            self.logger.error(str(self.ipAddress) + " isPrinterConnected response: No connection to Pi")
+
 
     def getPrinterStatus(self):
         '''
@@ -145,12 +153,16 @@ class OctoPrintClient:
         url = "http://" + self.ipAddress + "/api/printer"
         headers = {"X-Api-Key": self.apiKey}
         print("Accessing " + url + " using API Key " + self.apiKey)
-        r = requests.get(url, headers=headers)
-        rJson = json.loads(r.text)
-        if r.text == "Printer is not operational":
-            self.logger.error(print("Printer " + self.ipAddress + " is not operational"))
+
+        r = self.get(url, headers=headers)
+        if r is not None:
+            rJson = json.loads(r.text)
+            if r.text == "Printer is not operational":
+                self.logger.error(print("Printer " + self.ipAddress + " is not operational"))
+            else:
+                return r.text
         else:
-            return r.text
+            self.logger.error(str(self.ipAddress) + " getPrinterStatus response: No connection to Pi")
 
     def getCurrentPrintJob(self):
         '''
@@ -159,8 +171,12 @@ class OctoPrintClient:
         '''
         url = "http://" + self.ipAddress + "/api/job"
         headers = {"X-Api-Key": self.apiKey}
-        r = requests.get(url, headers=headers)
-        return r.text
+        r = self.get(url, headers=headers)
+        if r is not None:
+            return r.text
+        else:
+            self.logger.error(str(self.ipAddress) + " getCurrentPrintJob response: No connection to Pi")
+
 
     def selectPrintJob(self, gcodePath):
         '''
@@ -170,9 +186,11 @@ class OctoPrintClient:
         '''
         url = "http://" + self.ipAddress + gcodePath
         headers = {"Content-Type": "application/json", "X-Api-Key": self.apiKey}
-        payload = {"command": "select"}
-        r = requests.post(url, headers=headers, json=payload)
-        return r.text
+        json = {"command": "select"}
+        r = self.post(url, headers=headers, json=json)
+        if r is not None:
+            return r.text
+
 
     def startPrintJob(self):
         '''
@@ -183,6 +201,9 @@ class OctoPrintClient:
         '''
         url = "http://" + self.ipAddress + "/api/job"
         headers = {"Content-Type": "application/json", "X-Api-Key": self.apiKey}
-        payload = {"command": "start"}
-        r = requests.post(url, headers=headers, json=payload)
-        return r.text
+        json = {"command": "start"}
+        r = self.post(url, headers=headers, json=json)
+        if r is not None:
+            return r.text
+        else:
+            self.logger.error(str(self.ipAddress) + " startPrintJob response: No connection to Pi")

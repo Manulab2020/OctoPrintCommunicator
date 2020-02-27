@@ -135,11 +135,13 @@ def connectToPrinters():
 # Test code
 
 importPrinterList() # Always run this first!
-#connectToPrinters()
-print(opcs[0].connectToPrinter())
-#print(opcs[2].disconnectFromPrinter())
-#updatePrinterStatus()
 
-#i = 0; # Test using first printer in OPC list
+
+i = 2; # Test using first printer in OPC list
+#print(opcs[i].disconnectFromPrinter())
+print(opcs[i].isPrinterConnected())
+#print(opcs[i].connectToPrinter())
 #print(opcs[i].selectPrintJob("/api/files/local/test/home.gcode"))
+#print(opcs[i].startPrintJob())
+
 #print(opcs[i].getCurrentPrintJob())
