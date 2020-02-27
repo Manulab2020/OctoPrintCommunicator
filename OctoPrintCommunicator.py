@@ -1,8 +1,9 @@
-import sys
-from pathlib import Path
 import logging
 import json
 import requests
+
+from requests.exceptions import ConnectionError
+from requests.adapters import HTTPAdapter
 
 '''
 This class contains the necessary commands to extract information from Raspberry Pis running Octoprint,
@@ -26,6 +27,36 @@ class OctoPrintClient:
                             format='%(asctime)s %(levelname)s %(name)s %(message)s')
         self.logger = logging.getLogger(__name__)
 
+        #requests.adapters.DEFAULT_RETRIES = 1 # Set max retries when attempting to connect to printers
+
+    def get(self, url, headers=None, timeout=1):
+        '''
+        Performs a HTTP get using the Requests library.
+        Handles some common exceptions.
+        Returns a Requests response object.
+        '''
+        try:
+            return requests.get(url, headers=headers, timeout=timeout)
+        except ConnectionError as e:
+            #print("ERROR: Pi is not connected!")
+            print(self.logger.error("Cannot connect to Raspberry Pi"))
+            self.logger.error(e)
+            return None
+
+    def post(self, url, headers=None, data=None, json=None, timeout=1):
+        '''
+        Performs a HTTP post using the Requests library.
+        Handles some common exceptions.
+        Returns a Requests response object.
+        '''
+        try:
+            return requests.post(url, headers=headers, data=data, json=json, timeout=timeout)
+        except ConnectionError as e:
+            self.logger.error("Cannot connect to Raspberry Pi")
+            self.logger.error(e)
+            return None
+
+
 
     def printDebugInfo(self):
         '''
@@ -42,9 +73,12 @@ class OctoPrintClient:
         Returns response as string.
         '''
         url = "http://" + self.ipAddress + "/api/login"
-        payload = {"user": self.username, "pass": self.password}
-        r = requests.post(url, json=payload)
-        return r.text
+        json = {"user": self.username, "pass": self.password}
+        try:
+            r = requests.post(url, json=json)
+            return r.text
+        except ConnectionError as e:
+            self.logger.error("login() " + e)
 
     def logout(self):
         '''
@@ -59,13 +93,17 @@ class OctoPrintClient:
     def connectToPrinter(self):
         '''
         Connect to the 3D printer over USB. Default values are used.
-        Returns response as string.
+        Returns response code as integer.
+        TODO: Seems to return HTTP 204 no matter what. Investigate.
         '''
         url = "http://" + self.ipAddress + "/api/connection"
         headers = {"Content-Type": "application/json", "X-Api-Key": self.apiKey}
-        payload = {"command": "connect"}
-        r = requests.post(url, headers=headers, json=payload)
-        return r.text
+        json = {"command": "connect"}
+        r = self.post(url, headers=headers, json=json)
+        if r is not None:
+            return r.status_code
+        else:
+            return "No connection"
 
     def disconnectFromPrinter(self):
         '''
@@ -76,7 +114,7 @@ class OctoPrintClient:
         headers = {"Content-Type": "application/json", "X-Api-Key": self.apiKey}
         payload = {"command": "connect"}
         r = requests.post(url, headers=headers, json=payload)
-        return r.text
+        return r.status_code
 
     def isPrinterConnected(self):
         '''
@@ -86,14 +124,18 @@ class OctoPrintClient:
         url = "http://" + self.ipAddress + "/api/connection"
         headers = {"X-Api-Key": self.apiKey}
 
-        r = requests.get(url, headers=headers)
-        rJson = json.loads(r.text)
+        try:
+            r = requests.get(url, headers=headers, timeout=1) # Throw timeout exception after X seconds
+            rJson = json.loads(r.text)
 
-        if (rJson["current"]["state"]) == "Operational": # Can be Closed or Operational
-            return True
-        else:
+            if (rJson["current"]["state"]) == "Operational": # Can be Closed or Operational
+                return True
+            else:
+                return False
+        except ConnectionError as e:
+            self.logger.error(print("Cannot connect to Raspberry Pi"))
+            self.logger.error(e)
             return False
-
 
     def getPrinterStatus(self):
         '''
