@@ -1,8 +1,9 @@
+from octoprintcommunication import OctoPrintClient
+from threading import Timer
 from pathlib import Path
 from time import sleep
 import logging
-import OctoPrintCommunicator as opc
-import pandas as pd
+import pandas
 import json
 import csv
 
@@ -14,8 +15,9 @@ and various equipment.
 
 # Set up necessary variables
 opcs = list()                                       # For storing all initialized OctoPrintClient objects
-path_ListOfPrinters = Path("ListOfPrinters.csv")    # System-independent path
-printDebug = True;                                  # Toggle whether or not to print all responses to console
+path_ListOfPrinters = Path("ListOfPrinters.csv")    # System-independent path to the list of printers
+path_IpcCommands = Path("IpcCommands.csv")          # Path to printer commands from the IPC
+verbose = True;                                     # Toggle whether or not to print all responses to console
 
 # Set up logger
 logging.basicConfig(
@@ -43,15 +45,15 @@ def importPrinterList():
             delimiter = dialect.delimiter
 
         # Read csv to Pandas dataframe using first row as headers
-        df = pd.read_csv(path_ListOfPrinters, sep=delimiter, header=0)
-        ipList = list(df.ipAddress)
-        apiList = list(df.apiKey)
-        usernameList = list(df.username)
-        passwordList = list(df.password)
+        dataframe = pandas.read_csv(path_ListOfPrinters, sep=delimiter, header=0)
+        ipList = list(dataframe.ipAddress)
+        apiList = list(dataframe.apiKey)
+        usernameList = list(dataframe.username)
+        passwordList = list(dataframe.password)
 
         # Create an OPC instance for every element in the List Of Printers
         for i in range(len(ipList)):
-            opcs.append(opc.OctoPrintClient(ipList[i], apiList[i], usernameList[i], passwordList[i]))
+            opcs.append(OctoPrintClient(ipList[i], apiList[i], usernameList[i], passwordList[i]))
 
     except Exception as e:
         logger.error(e)
@@ -114,8 +116,8 @@ def updatePrinterStatus():
         with open(path_statusTxt, 'w+') as statusTextFile:
             statusTextFile.write(opcStatusFields + opcStatusString)
 
-        # Print responses if the printResponses debugging variable is set to true
-        if printDebug:
+        # Print responses if the verbose debugging variable is set to true
+        if verbose:
             print(opc.ipAddress + " login response: " + r_login)
             print(opc.ipAddress + " printer connect response: " + r_connect)
             print(opc.ipAddress + " printer status: " + opcStatus)
@@ -132,16 +134,14 @@ def connectToPrinters():
         response = opc.connectToPrinter()
         print("HTTP " + str(response))
 
+
+
 # Test code
-
 importPrinterList() # Always run this first!
-
-
-i = 2; # Test using first printer in OPC list
+i = 0;
 #print(opcs[i].disconnectFromPrinter())
-print(opcs[i].isPrinterConnected())
+#print(opcs[i].isPrinterConnected())
 #print(opcs[i].connectToPrinter())
 #print(opcs[i].selectPrintJob("/api/files/local/test/home.gcode"))
 #print(opcs[i].startPrintJob())
-
 #print(opcs[i].getCurrentPrintJob())
