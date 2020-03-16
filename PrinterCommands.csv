@@ -1,0 +1,2 @@
+IP_Address,Command,Argument
+EXAMPLE_IP,print,/api/files/local/test/home.gcode

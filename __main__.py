@@ -31,6 +31,33 @@ logging.basicConfig(
     filename=path_Log, level=logging.ERROR, format='%(asctime)s %(levelname)s %(name)s %(message)s')
 logger = logging.getLogger(__name__)
 
+def inferCsvFormat(path_csv):
+    '''
+    Find the delimiter/separation string used in a CSV, then set the data/column header position.
+    '''
+    with open(path_csv, 'r') as csvfile:
+
+        # Infer delimiter data automatically based on first line
+        dialect = csv.Sniffer().sniff(csvfile.readline(), [',', ';'])
+        csvfile.seek(0) # Return to first line of file for next read operation.
+        delimiter = dialect.delimiter
+        header = 0
+
+        csvData = csv.reader(csvfile)
+        csvDataList = list(csvData)
+        if verbose:
+            print("Opening " + str(path_csv) + " with delimiter=" + delimiter)
+            print("First cell in printer list CSV: ", str(csvDataList[0][0]))
+
+        # If the first line contains Excel separator data, use that instead, then use next line as header
+        if csvDataList[0][0] == "sep=;":
+            delimiter = ";"
+            header = 1
+        elif csvDataList[0][0] == "sep=,":
+            delimiter = ","
+            header = 1
+
+        return (delimiter, header)
 
 def importPrinterList():
     '''
@@ -45,11 +72,8 @@ def importPrinterList():
     global usernameList
     global passwordList
     try:
-        # Check for Excel delimiter info in the file. If it's there, use it.
-        with open(path_ListOfPrinters, 'r') as csvfile:
-                dialect = csv.Sniffer().sniff(csvfile.read(1024))
-                delimiter = dialect.delimiter
-                header = 0
+
+        delimiter, header = inferCsvFormat(path_ListOfPrinters)
 
         # Read csv to Pandas dataframe using first row as headers
         dataframe = pandas.read_csv(path_ListOfPrinters, sep=delimiter, header=header)
@@ -141,23 +165,7 @@ def getCommandList():
     Returns the commands as lists of IP addresses, commands and arguments.
     '''
 
-    # Check for Excel delimiter info in the file. If it's there, use it.
-    with open(path_PrinterCommands, 'r') as csvfile:
-        csvData = csv.reader(csvfile)
-        csvDataList = list(csvData)
-        if verbose:
-            print("First row in command CSV: ", str(csvDataList[0][0]))
-        if csvDataList[0][0] == "sep=;":
-            delimiter = ";"
-            header = 1
-        elif csvDataList[0][0] == "sep=,":
-            delimiter = ","
-            header = 1
-        # If there's no delimiter info in the CSV, infer it automatically.
-        else:
-            dialect = csv.Sniffer().sniff(csvfile.read(1024))
-            delimiter = dialect.delimiter
-            header = 0
+    delimiter, header = inferCsvFormat(path_PrinterCommands)
 
     # Read csv to Pandas dataframe using the first relevant row as headers
     dataframe = pandas.read_csv(path_PrinterCommands, sep=delimiter, header=header)
@@ -180,8 +188,9 @@ MAIN SCRIPT STARTS HERE
 if __name__ == "__main__":
 
     importPrinterList() # Must be run first. Otherwise there won't be any OPCs to work with.
+
     connectToPrinters()
-    sleep(10) # Sleep for some seconds to make sure that printers get time to connect.
+    sleep(5) # Sleep for some seconds to make sure that printers get time to connect. Should be ~10sec.
 
     updatePrinterStatus()
 
