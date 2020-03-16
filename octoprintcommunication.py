@@ -13,7 +13,7 @@ JSON objects. Methods primarily return JSON-formatted strings.
 
 class OctoPrintClient:
 
-    def __init__(self, ipAddress, apiKey, username, password):
+    def __init__(self, ipAddress, apiKey, username, password, path_log='Log.txt'):
         '''
         Initialize a "client". Each client handles one connection to one printer.
         A logger object is initialized to write error logs as well.
@@ -23,7 +23,7 @@ class OctoPrintClient:
         self.username = username
         self.password = password
 
-        logging.basicConfig(filename='Log.txt', level=logging.ERROR,
+        logging.basicConfig(filename=path_log, level=logging.ERROR,
                             format='%(asctime)s %(levelname)s %(name)s %(message)s')
         self.logger = logging.getLogger(__name__)
 
@@ -164,6 +164,7 @@ class OctoPrintClient:
         else:
             self.logger.error(str(self.ipAddress) + " getPrinterStatus response: No connection to Pi")
 
+
     def getCurrentPrintJob(self):
         '''
         Check to see what is currently printing, if anything at all.
@@ -206,4 +207,9 @@ class OctoPrintClient:
         if r is not None:
             return r.text
         else:
-            self.logger.error(str(self.ipAddress) + " startPrintJob response: No connection to Pi")
+            if self.isPrinterConnected():
+                self.logger.error(str(self.ipAddress) + " startPrintJob response: "
+                                                      + "Could not start print job. Printer might be busy")
+            else:
+                self.logger.error(str(self.ipAddress) + " startPrintJob response: "
+                                                      + " Could not start print job. No connection to Pi")

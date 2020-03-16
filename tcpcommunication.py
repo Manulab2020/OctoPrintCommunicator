@@ -1,7 +1,7 @@
 import socket
 
 '''
-This module is currently only for testing purposes.
+A work in progress. Currently debating whether to use it or not.
 It does what it says on the tin: handles transfer of data over TCP
 '''
 

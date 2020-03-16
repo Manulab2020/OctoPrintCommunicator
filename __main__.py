@@ -2,6 +2,7 @@ from octoprintcommunication import OctoPrintClient
 from threading import Timer
 from pathlib import Path
 from time import sleep
+import configparser
 import logging
 import pandas
 import json
@@ -13,15 +14,21 @@ instances of OctoPrintCommunicator clients. The main program then handles commun
 and various equipment.
 '''
 
-# Set up necessary variables
-opcs = list()                                       # For storing all initialized OctoPrintClient objects
-path_ListOfPrinters = Path("ListOfPrinters.csv")    # System-independent path to the list of printers
-path_IpcCommands = Path("IpcCommands.csv")          # Path to printer commands from the IPC
-verbose = True;                                     # Toggle whether or not to print all responses to console
+
+# First we need to set up the necessary variables to make the script run.
+# Settings and file paths are read from config.ini
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+opcs = list()                                                   # For storing all initialized OctoPrintClient objects
+path_ListOfPrinters = Path(config['Paths']['ListOfPrinters'])   # Path to the list of printer IPs / API keys
+path_PrinterCommands = Path(config['Paths']['PrinterCommands']) # Path to printer commands from the IPC
+path_Log = Path(config['Paths']['Log'])                         # Where to write the error log
+verbose = config['Settings'].getboolean('Verbose')            # Toggle whether or not to print all responses to console
 
 # Set up logger
 logging.basicConfig(
-    filename='Log.txt', level=logging.ERROR, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+    filename=path_Log, level=logging.ERROR, format='%(asctime)s %(levelname)s %(name)s %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -38,14 +45,14 @@ def importPrinterList():
     global usernameList
     global passwordList
     try:
-
-        # Infer CSV delimiter (comma or semicolon)
+        # Check for Excel delimiter info in the file. If it's there, use it.
         with open(path_ListOfPrinters, 'r') as csvfile:
-            dialect = csv.Sniffer().sniff(csvfile.read(1024))
-            delimiter = dialect.delimiter
+                dialect = csv.Sniffer().sniff(csvfile.read(1024))
+                delimiter = dialect.delimiter
+                header = 0
 
         # Read csv to Pandas dataframe using first row as headers
-        dataframe = pandas.read_csv(path_ListOfPrinters, sep=delimiter, header=0)
+        dataframe = pandas.read_csv(path_ListOfPrinters, sep=delimiter, header=header)
         ipList = list(dataframe.ipAddress)
         apiList = list(dataframe.apiKey)
         usernameList = list(dataframe.username)
@@ -58,6 +65,16 @@ def importPrinterList():
     except Exception as e:
         logger.error(e)
         logger.error(print("ListOfPrinters.csv may be missing or of invalid format"))
+
+def connectToPrinters():
+    '''
+    Autoconnect the Pis to their respective printers (over USB)
+
+    '''
+    for i, opc in enumerate(opcs):
+        if not opc.isPrinterConnected:
+            response = opc.connectToPrinter()
+            print("HTTP " + str(response))
 
 def updatePrinterStatus():
     '''
@@ -77,9 +94,6 @@ def updatePrinterStatus():
     for i, opc in enumerate(opcs):
         printerIsConnected = opc.isPrinterConnected()
         if printerIsConnected:
-            r_login = opc.login()
-            r_connect = opc.connectToPrinter()
-            sleep(0.5)
             opcStatus = opc.getPrinterStatus()
             opcSJ = json.loads(opcStatus)
             # Row structure: [IP]; [connected]; [printing] ; [ready] ; [operational] ; [pausing] ; [paused] ; [finishing] ; [nozzle temp] ; [bed temp]
@@ -96,8 +110,6 @@ def updatePrinterStatus():
                                 str(opcSJ['temperature']['tool0']['actual'])
                                 )
         else:
-            r_login = "Not connected to Pi!"
-            r_connect = "Not connected to Pi!"
             opcStatus = "Not connected to Pi!"
             opcStatusString =   (
                                 str(opc.ipAddress) + ";" +
@@ -118,30 +130,68 @@ def updatePrinterStatus():
 
         # Print responses if the verbose debugging variable is set to true
         if verbose:
-            print(opc.ipAddress + " login response: " + r_login)
-            print(opc.ipAddress + " printer connect response: " + r_connect)
             print(opc.ipAddress + " printer status: " + opcStatus)
 
-    # Close CSV to avoid
+    # Close CSV to avoid access issues
     statusCsv.close()
 
-def connectToPrinters():
+def getCommandList():
     '''
-    Autoconnect the Pis to their respective printers (over USB)
+    Read and sort CSV containing commands for the printer. The CSV is intended to be written by an IPC.
+    Returns the commands as lists of IP addresses, commands and arguments.
+    '''
 
-    '''
+    # Check for Excel delimiter info in the file. If it's there, use it.
+    with open(path_PrinterCommands, 'r') as csvfile:
+        csvData = csv.reader(csvfile)
+        csvDataList = list(csvData)
+        if verbose:
+            print("First row in command CSV: ", str(csvDataList[0][0]))
+        if csvDataList[0][0] == "sep=;":
+            delimiter = ";"
+            header = 1
+        elif csvDataList[0][0] == "sep=,":
+            delimiter = ","
+            header = 1
+        # If there's no delimiter info in the CSV, infer it automatically.
+        else:
+            dialect = csv.Sniffer().sniff(csvfile.read(1024))
+            delimiter = dialect.delimiter
+            header = 0
+
+    # Read csv to Pandas dataframe using the first relevant row as headers
+    dataframe = pandas.read_csv(path_PrinterCommands, sep=delimiter, header=header)
+    ipList = list(dataframe.IP_Address)
+    commandList = list(dataframe.Command)
+    argumentList = list(dataframe.Argument)
+
+    # Create a 2D list of command data.
+    outputList = [ipList, commandList, argumentList]
+
+    #open(path_printerCommands, 'w').close() # Clear file after parsing it
+
+    return outputList
+
+
+
+'''
+MAIN SCRIPT STARTS HERE
+'''
+if __name__ == "__main__":
+
+    importPrinterList() # Must be run first. Otherwise there won't be any OPCs to work with.
+    connectToPrinters()
+    sleep(10) # Sleep for some seconds to make sure that printers get time to connect.
+
+    updatePrinterStatus()
+
+    commandList = getCommandList()
+
+    # Parse and run commands
     for i, opc in enumerate(opcs):
-        response = opc.connectToPrinter()
-        print("HTTP " + str(response))
+        if opc.isPrinterConnected:
+            if commandList[0][i] == opc.ipAddress:
+                if commandList[1][i] == "print":
 
-
-
-# Test code
-importPrinterList() # Always run this first!
-i = 0;
-#print(opcs[i].disconnectFromPrinter())
-#print(opcs[i].isPrinterConnected())
-#print(opcs[i].connectToPrinter())
-#print(opcs[i].selectPrintJob("/api/files/local/test/home.gcode"))
-#print(opcs[i].startPrintJob())
-#print(opcs[i].getCurrentPrintJob())
+                    opc.selectPrintJob(commandList[2][i])
+                    opc.startPrintJob()
