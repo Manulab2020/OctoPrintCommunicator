@@ -25,6 +25,7 @@ path_ListOfPrinters = Path(config['Paths']['ListOfPrinters'])   # Path to the li
 path_PrinterCommands = Path(config['Paths']['PrinterCommands']) # Path to printer commands from the IPC
 path_Log = Path(config['Paths']['Log'])                         # Where to write the error log
 verbose = config['Settings'].getboolean('Verbose')            # Toggle whether or not to print all responses to console
+timeoutThreshold = int(config['Settings']['HTTP_timeout'])    # HTTP timeout threshold in seconds
 
 # Set up logger
 logging.basicConfig(
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 def inferCsvFormat(path_csv):
     '''
     Find the delimiter/separation string used in a CSV, then set the data/column header position.
+    Returns: delimiter sign (string), which row number to read headers from (int)
     '''
     with open(path_csv, 'r') as csvfile:
 
@@ -47,7 +49,6 @@ def inferCsvFormat(path_csv):
         csvDataList = list(csvData)
         if verbose:
             print("Opening " + str(path_csv) + " with delimiter=" + delimiter)
-            print("First cell in printer list CSV: ", str(csvDataList[0][0]))
 
         # If the first line contains Excel separator data, use that instead, then use next line as header
         if csvDataList[0][0] == "sep=;":
@@ -84,7 +85,8 @@ def importPrinterList():
 
         # Create an OPC instance for every element in the List Of Printers
         for i in range(len(ipList)):
-            opcs.append(OctoPrintClient(ipList[i], apiList[i], usernameList[i], passwordList[i]))
+            opcs.append(OctoPrintClient(ipList[i], apiList[i], usernameList[i],
+                                        passwordList[i], path_Log, timeoutThreshold))
 
     except Exception as e:
         logger.error(e)
@@ -96,9 +98,15 @@ def connectToPrinters():
 
     '''
     for i, opc in enumerate(opcs):
-        if not opc.isPrinterConnected:
+        if verbose:
+            print("Attempting to connect to " + opc.ipAddress)
+        if not opc.isPrinterConnected():
             response = opc.connectToPrinter()
-            print("HTTP " + str(response))
+            if verbose:
+                print("HTTP " + str(response))
+        else:
+            if verbose:
+                print("Already connected.")
 
 def updatePrinterStatus():
     '''
@@ -186,21 +194,30 @@ def getCommandList():
 MAIN SCRIPT STARTS HERE
 '''
 if __name__ == "__main__":
-
+    # Upon calling the script, printers are connected, then ran until the script / shell is closed.
     importPrinterList() # Must be run first. Otherwise there won't be any OPCs to work with.
-
     connectToPrinters()
-    sleep(5) # Sleep for some seconds to make sure that printers get time to connect. Should be ~10sec.
+    sleep(10) # Sleep for some seconds to make sure that printers get time to connect. Should be ~10sec.
 
-    updatePrinterStatus()
+    while True:
+        updatePrinterStatus()
+        commandList = getCommandList()
 
-    commandList = getCommandList()
+        # Parse and run commands
+        for i, opc in enumerate(opcs):
+            # If printer is connected, run commands
+            if opc.isPrinterConnected:
+                ipAddress = commandList[0][i]
+                command = commandList[1][i]
+                argument = commandList[2][i]
+                if ipAddress == opc.ipAddress:
+                    if command == "print":
+                        selectedFile = commandList[2][i]
+                        # Check if the string actually points the files directory
+                        if "api/files" in str(selectedFile):
+                            opc.selectPrintJob(commandList[2][i])
+                            opc.startPrintJob()
+                            print(ipAddress + ": attempting to print: " + argument)
 
-    # Parse and run commands
-    for i, opc in enumerate(opcs):
-        if opc.isPrinterConnected:
-            if commandList[0][i] == opc.ipAddress:
-                if commandList[1][i] == "print":
 
-                    opc.selectPrintJob(commandList[2][i])
-                    opc.startPrintJob()
+        sleep(5) # More than enough, as these actions are not time sensitive.

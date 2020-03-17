@@ -1,6 +1,8 @@
+import ipaddress
+import requests
 import logging
 import json
-import requests
+
 
 from requests.exceptions import ConnectionError
 from requests.adapters import HTTPAdapter
@@ -13,43 +15,44 @@ JSON objects. Methods primarily return JSON-formatted strings.
 
 class OctoPrintClient:
 
-    def __init__(self, ipAddress, apiKey, username, password, path_log='Log.txt'):
+    def __init__(self, ipAddress, apiKey, username, password, path_log='Log.txt', timeout=2):
         '''
         Initialize a "client". Each client handles one connection to one printer.
         A logger object is initialized to write error logs as well.
         '''
-        self.ipAddress = ipAddress
-        self.apiKey = apiKey
-        self.username = username
-        self.password = password
+        self.ipAddress = ipAddress  # Raspberry Pi IP Address
+        self.apiKey = apiKey        # Octoprint API Key
+        self.username = username    # Octoprint Username
+        self.password = password    # Octoprint User Password
+        self.timeout = timeout      # HTTP timeout threshold (seconds)
 
         logging.basicConfig(filename=path_log, level=logging.ERROR,
                             format='%(asctime)s %(levelname)s %(name)s %(message)s')
         self.logger = logging.getLogger(__name__)
 
 
-    def get(self, url, headers=None, timeout=1):
+    def get(self, url, headers=None):
         '''
         Performs a HTTP get using the Requests library.
         Handles some common exceptions.
         Returns a Requests response object.
         '''
         try:
-            return requests.get(url, headers=headers, timeout=timeout)
+            return requests.get(url, headers=headers, timeout=self.timeout)
         except ConnectionError as e:
             #print("ERROR: Pi is not connected!")
             print(self.logger.error("Cannot connect to Raspberry Pi"))
             self.logger.error(e)
 
 
-    def post(self, url, headers=None, data=None, json=None, timeout=1):
+    def post(self, url, headers=None, data=None, json=None):
         '''
         Performs a HTTP post using the Requests library.
         Handles some common exceptions.
         Returns a Requests response object.
         '''
         try:
-            return requests.post(url, headers=headers, data=data, json=json, timeout=timeout)
+            return requests.post(url, headers=headers, data=data, json=json, timeout=self.timeout)
         except ConnectionError as e:
             self.logger.error("Cannot connect to Raspberry Pi")
             self.logger.error(e)
@@ -98,7 +101,6 @@ class OctoPrintClient:
         Connect to the 3D printer over USB. Default values are used.
         Returns response code as integer.
         Note that establishing connection may take several seconds.
-        TODO: Seems to return HTTP 204 no matter what. Investigate.
         '''
         url = "http://" + self.ipAddress + "/api/connection"
         headers = {"Content-Type": "application/json", "X-Api-Key": self.apiKey}
