@@ -15,16 +15,18 @@ JSON objects. Methods primarily return JSON-formatted strings.
 
 class OctoPrintClient:
 
-    def __init__(self, ipAddress, apiKey, username, password, path_log='Log.txt', timeout=2):
+    def __init__(self, ipAddress, apiKey, username, password, path_log='Log.txt', timeout=2, verbose=False):
         '''
         Initialize a "client". Each client handles one connection to one printer.
         A logger object is initialized to write error logs as well.
         '''
-        self.ipAddress = ipAddress  # Raspberry Pi IP Address
-        self.apiKey = apiKey        # Octoprint API Key
-        self.username = username    # Octoprint Username
-        self.password = password    # Octoprint User Password
-        self.timeout = timeout      # HTTP timeout threshold (seconds)
+        self.ipAddress = ipAddress      # Raspberry Pi IP Address
+        self.apiKey = apiKey            # Octoprint API Key
+        self.username = username        # Octoprint Username
+        self.password = password        # Octoprint User Password
+        self.timeout = timeout          # HTTP timeout threshold (seconds)
+        self.printFinished = "false"    # Status to be used by external applications
+        self.verbose = verbose          # Toggle whether to print responses to console
 
         logging.basicConfig(filename=path_log, level=logging.ERROR,
                             format='%(asctime)s %(levelname)s %(name)s %(message)s')
@@ -40,8 +42,8 @@ class OctoPrintClient:
         try:
             return requests.get(url, headers=headers, timeout=self.timeout)
         except ConnectionError as e:
-            #print("ERROR: Pi is not connected!")
-            print(self.logger.error("Cannot connect to Raspberry Pi"))
+            errorStr = self.ipAddress + " HTTP get: No connection to Pi"
+            self.logger.error(errorStr)
             self.logger.error(e)
 
 
@@ -54,7 +56,8 @@ class OctoPrintClient:
         try:
             return requests.post(url, headers=headers, data=data, json=json, timeout=self.timeout)
         except ConnectionError as e:
-            self.logger.error("Cannot connect to Raspberry Pi")
+            errorStr = self.ipAddress + " HTTP post: No connection to Pi"
+            self.logger.error(errorStr)
             self.logger.error(e)
 
 
@@ -79,7 +82,10 @@ class OctoPrintClient:
         if r is not None:
             return r.text
         else:
-            self.logger.error(str(self.ipAddress) + " Login response: No connection to Pi")
+            errorStr = str(self.ipAddress) + " login response: No connection to Pi"
+            self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)
 
 
     def logout(self):
@@ -93,7 +99,10 @@ class OctoPrintClient:
         if r is not None:
             return r.text
         else:
-            self.logger.error(str(self.ipAddress) + " Logout response: No connection to Pi")
+            errorStr = str(self.ipAddress) + " logout response: No connection to Pi"
+            self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)
 
 
     def connectToPrinter(self):
@@ -109,8 +118,10 @@ class OctoPrintClient:
         if r is not None:
             return r.status_code
         else:
-            self.logger.error(str(self.ipAddress) + " ConnectToPrinter response: No connection to Pi")
-
+            errorStr = str(self.ipAddress) + " connectToPrinter response: No connection to Pi"
+            self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)
 
     def disconnectFromPrinter(self):
         '''
@@ -124,7 +135,10 @@ class OctoPrintClient:
         if r is not None:
             return r.status_code
         else:
-            self.logger.error(str(self.ipAddress) + " DisconnectFromPrinter response: No connection to Pi")
+            errorStr = str(self.ipAddress) + " disconnectFromPrinter response: No connection to Pi"
+            self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)
 
 
     def isPrinterConnected(self):
@@ -139,12 +153,17 @@ class OctoPrintClient:
         if r is not None:
             rJson = json.loads(r.text)
 
-            if (rJson["current"]["state"]) == "Operational": # Can be Closed or Operational
+            # Check for responses
+            printerCurrentState = rJson["current"]["state"]
+            if printerCurrentState == "Operational" or printerCurrentState == "Printing":
                     return True
             else:
                     return False
         else:
-            self.logger.error(str(self.ipAddress) + " isPrinterConnected response: No connection to Pi")
+            errorStr = str(self.ipAddress) + " isPrinterConnected response: No connection to Pi"
+            self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)
 
 
     def getPrinterStatus(self):
@@ -154,17 +173,26 @@ class OctoPrintClient:
         '''
         url = "http://" + self.ipAddress + "/api/printer"
         headers = {"X-Api-Key": self.apiKey}
-        print("Accessing " + url + " using API Key " + self.apiKey)
+        if self.verbose:
+            print("Accessing " + url + " using API Key " + self.apiKey)
 
         r = self.get(url, headers=headers)
         if r is not None:
             rJson = json.loads(r.text)
+
             if r.text == "Printer is not operational":
-                self.logger.error(print("Printer " + self.ipAddress + " is not operational"))
+                errorStr = "Printer " + self.ipAddress + " is not operational"
+                self.logger.error(errorStr)
+                if self.verbose:
+                    print(errorStr)
+
             else:
                 return r.text
         else:
-            self.logger.error(str(self.ipAddress) + " getPrinterStatus response: No connection to Pi")
+            errorStr = str(self.ipAddress) + " getPrinterStatus response: No connection to Pi"
+            self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)
 
 
     def getCurrentPrintJob(self):
@@ -178,7 +206,10 @@ class OctoPrintClient:
         if r is not None:
             return r.text
         else:
-            self.logger.error(str(self.ipAddress) + " getCurrentPrintJob response: No connection to Pi")
+            errorStr = str(self.ipAddress) + " getCurrentPrintJob response: No connection to Pi"
+            self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)
 
 
     def selectPrintJob(self, gcodePath):
@@ -210,8 +241,10 @@ class OctoPrintClient:
             return r.text
         else:
             if self.isPrinterConnected():
-                self.logger.error(str(self.ipAddress) + " startPrintJob response: "
-                                                      + "Could not start print job. Printer might be busy")
+                errorStr = str(self.ipAddress) + " startPrintJob response: Could not start print job. Printer might be busy"
+                self.logger.error(errorStr)
             else:
-                self.logger.error(str(self.ipAddress) + " startPrintJob response: "
-                                                      + " Could not start print job. No connection to Pi")
+                errorStr = str(self.ipAddress) + " startPrintJob response: Could not start print job. No connection to Pi"
+                self.logger.error(errorStr)
+            if self.verbose:
+                print(errorStr)

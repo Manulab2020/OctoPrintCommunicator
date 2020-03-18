@@ -1,5 +1,4 @@
 from octoprintcommunication import OctoPrintClient
-from threading import Timer
 from pathlib import Path
 from time import sleep
 import configparser
@@ -7,6 +6,7 @@ import logging
 import pandas
 import json
 import csv
+import sys
 
 '''
 In this module, a list of IP addresses and API keys for Octoprint-connected 3D printers are read, then used to create 
@@ -24,8 +24,8 @@ opcs = list()                                                   # For storing al
 path_ListOfPrinters = Path(config['Paths']['ListOfPrinters'])   # Path to the list of printer IPs / API keys
 path_PrinterCommands = Path(config['Paths']['PrinterCommands']) # Path to printer commands from the IPC
 path_Log = Path(config['Paths']['Log'])                         # Where to write the error log
-verbose = config['Settings'].getboolean('Verbose')            # Toggle whether or not to print all responses to console
-timeoutThreshold = int(config['Settings']['HTTP_timeout'])    # HTTP timeout threshold in seconds
+verbose = config['Settings'].getboolean('Verbose')              # Toggle whether to print all responses to console
+timeoutThreshold = int(config['Settings']['HTTP_timeout'])      # HTTP timeout threshold in seconds
 
 # Set up logger
 logging.basicConfig(
@@ -86,7 +86,7 @@ def importPrinterList():
         # Create an OPC instance for every element in the List Of Printers
         for i in range(len(ipList)):
             opcs.append(OctoPrintClient(ipList[i], apiList[i], usernameList[i],
-                                        passwordList[i], path_Log, timeoutThreshold))
+                                        passwordList[i], path_Log, timeoutThreshold, verbose))
 
     except Exception as e:
         logger.error(e)
@@ -114,13 +114,14 @@ def updatePrinterStatus():
     Also, for testing purposes, write each printer's status to a separate txt file.
     '''
 
-    # Row structure: [IP]; [connected]; [printing] ; [ready] ; [operational] ; [pausing] ; [paused] ; [finishing] ; [nozzle temp] ; [bed temp]
-    opcStatusFields = ("IP;Connected;Printing;Ready;Operational;Pausing;Paused;Finishing;NozzleTemp;BedTemp\n")
+    # Row header structure:
+    # [IP]; [connected]; [printing]; [ready]; [operational]; [pausing]; [paused]; [finished]; [nozzle temp]; [bed temp]; [print job];
+    opcStatusFields = ("IP;Connected;Printing;Ready;Operational;Pausing;Paused;Finished;NozzleTemp;BedTemp;PrintJob\n")
 
     # Set up status CSV & txt
     path_statusCsv = Path("PrinterStatus/PrinterStatus.csv")
-    statusCsv = open(path_statusCsv, 'w+') # Clear file before writing
-    statusCsv.write(opcStatusFields)
+    statusCsv = open(path_statusCsv, 'w+')  # Clear file before writing
+    statusCsv.write(opcStatusFields)        # Add headers
 
     # Create status string for each connected printer
     for i, opc in enumerate(opcs):
@@ -128,18 +129,26 @@ def updatePrinterStatus():
         if printerIsConnected:
             opcStatus = opc.getPrinterStatus()
             opcSJ = json.loads(opcStatus)
-            # Row structure: [IP]; [connected]; [printing] ; [ready] ; [operational] ; [pausing] ; [paused] ; [finishing] ; [nozzle temp] ; [bed temp]
+            opcCurrentPrintJob = json.loads(opcs[0].getCurrentPrintJob())
+
+            # The "finished"-status is a local variable in the client object.
+            # It is only set when "finishing" is true, at the end of each print job.
+            # It is reset by the printer command [printerIP , currentPrint, retrieved]
+            if "true" in str(opcSJ['state']['flags']['finishing']):
+                opc.printFinished = "true"
+
             opcStatusString =   (
-                                str(opc.ipAddress) + ";" +
-                                str(printerIsConnected) + ";" +
-                                str(opcSJ['state']['flags']['printing']) + ';' +
-                                str(opcSJ['state']['flags']['ready'])    + ';' +
-                                str(opcSJ['state']['flags']['operational']) + ';' +
-                                str(opcSJ['state']['flags']['pausing'])  + ';' +
-                                str(opcSJ['state']['flags']['paused'])   + ';' +
-                                str(opcSJ['state']['flags']['finishing']) + ";" +
-                                str(opcSJ['temperature']['bed']['actual']) + ';' +
-                                str(opcSJ['temperature']['tool0']['actual'])
+                                str(opc.ipAddress)                              + ';' +
+                                str(printerIsConnected)                         + ';' +
+                                str(opcSJ['state']['flags']['printing'])        + ';' +
+                                str(opcSJ['state']['flags']['ready'])           + ';' +
+                                str(opcSJ['state']['flags']['operational'])     + ';' +
+                                str(opcSJ['state']['flags']['pausing'])         + ';' +
+                                str(opcSJ['state']['flags']['paused'])          + ';' +
+                                opc.printFinished                               + ';' +
+                                str(opcSJ['temperature']['bed']['actual'])      + ';' +
+                                str(opcSJ['temperature']['tool0']['actual'])    + ';' +
+                                str(opcCurrentPrintJob['job']['file']['name'])
                                 )
         else:
             opcStatus = "Not connected to Pi!"
@@ -151,7 +160,8 @@ def updatePrinterStatus():
                                 ';' +
                                 ';' +
                                 ';' +
-                                ";" +
+                                ';' +
+                                ';' +
                                 ';'
                                 )
         # Append status string to CSV & txt
@@ -162,7 +172,7 @@ def updatePrinterStatus():
 
         # Print responses if the verbose debugging variable is set to true
         if verbose:
-            print(opc.ipAddress + " printer status: " + opcStatus)
+            print(opc.ipAddress + " printer status: " + opcStatusString)
 
     # Close CSV to avoid access issues
     statusCsv.close()
@@ -195,9 +205,10 @@ MAIN SCRIPT STARTS HERE
 '''
 if __name__ == "__main__":
     # Upon calling the script, printers are connected, then ran until the script / shell is closed.
-    importPrinterList() # Must be run first. Otherwise there won't be any OPCs to work with.
+    importPrinterList()  # Must be run first. Otherwise there won't be any OPCs to work with.
     connectToPrinters()
-    sleep(10) # Sleep for some seconds to make sure that printers get time to connect. Should be ~10sec.
+    # Connection time varies between hardware and network configurations. Sleep for at least 10 seconds before starting.
+    sleep(10)
 
     while True:
         updatePrinterStatus()
@@ -211,6 +222,7 @@ if __name__ == "__main__":
                 command = commandList[1][i]
                 argument = commandList[2][i]
                 if ipAddress == opc.ipAddress:
+
                     if command == "print":
                         selectedFile = commandList[2][i]
                         # Check if the string actually points the files directory
@@ -219,5 +231,12 @@ if __name__ == "__main__":
                             opc.startPrintJob()
                             print(ipAddress + ": attempting to print: " + argument)
 
+                    # For external applications,
+                    if command == "printRetrieved":
+                        opc.printFinished = "false"
+
+            # Commands not related to printers (shutdown, settings, debug)
+            if str(commandList[0][i]).lower == "exit" or str(commandList[0][i]).lower == "shutdown":
+                sys.exit()
 
         sleep(5) # More than enough, as these actions are not time sensitive.
