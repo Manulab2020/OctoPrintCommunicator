@@ -15,7 +15,8 @@ JSON objects. Methods primarily return JSON-formatted strings.
 
 class OctoPrintClient:
 
-    def __init__(self, ipAddress, apiKey, username, password, path_log='Log.txt', timeout=2, verbose=False):
+    def __init__(self, ipAddress, apiKey, username, password,
+                 rackID=1, xPos=1, yPos=1, path_log='Log.txt', timeout=2, verbose=False):
         '''
         Initialize a "client". Each client handles one connection to one printer.
         A logger object is initialized to write error logs as well.
@@ -24,6 +25,9 @@ class OctoPrintClient:
         self.apiKey = apiKey            # Octoprint API Key
         self.username = username        # Octoprint Username
         self.password = password        # Octoprint User Password
+        self.rackID = rackID            # Printer rack number for this printer
+        self.xPos = xPos                # X-position of printer in rack
+        self.yPos = yPos                # Y-position of printer in rack
         self.timeout = timeout          # HTTP timeout threshold (seconds)
         self.printFinished = "false"    # Status to be used by external applications
         self.verbose = verbose          # Toggle whether to print responses to console

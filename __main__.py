@@ -82,11 +82,15 @@ def importPrinterList():
         apiList = list(dataframe.apiKey)
         usernameList = list(dataframe.username)
         passwordList = list(dataframe.password)
+        rackIDlist = list(dataframe.rackID)
+        xPosList = list(dataframe.xPosList)
+        yPosList = list(dataframe.yPosList)
 
         # Create an OPC instance for every element in the List Of Printers
         for i in range(len(ipList)):
-            opcs.append(OctoPrintClient(ipList[i], apiList[i], usernameList[i],
-                                        passwordList[i], path_Log, timeoutThreshold, verbose))
+            opcs.append(OctoPrintClient(ipList[i], apiList[i], usernameList[i], passwordList[i],
+                                        rackIDlist[i], xPosList[i], yPosList[i],
+                                        path_log=path_Log, timeout=timeoutThreshold, verbose=True))
 
     except Exception as e:
         logger.error(e)
@@ -115,8 +119,8 @@ def updatePrinterStatus():
     '''
 
     # Row header structure:
-    # [IP]; [connected]; [printing]; [ready]; [operational]; [pausing]; [paused]; [finished]; [nozzle temp]; [bed temp]; [print job];
-    opcStatusFields = ("IP;Connected;Printing;Ready;Operational;Pausing;Paused;Finished;NozzleTemp;BedTemp;PrintJob\n")
+    # [IP]; [connected]; [printing]; [ready]; [operational]; [pausing]; [paused]; [finished]; [nozzle temp]; [bed temp]; [print job]; [rack ID]; [X pos]; [Y pos]
+    opcStatusFields = ("IP;Connected;Printing;Ready;Operational;Pausing;Paused;Finished;NozzleTemp;BedTemp;PrintJob;RackID,Xpos,Ypos\n")
 
     # Set up status CSV & txt
     path_statusCsv = Path("PrinterStatus/PrinterStatus.csv")
@@ -148,13 +152,20 @@ def updatePrinterStatus():
                                 opc.printFinished                               + ';' +
                                 str(opcSJ['temperature']['bed']['actual'])      + ';' +
                                 str(opcSJ['temperature']['tool0']['actual'])    + ';' +
-                                str(opcCurrentPrintJob['job']['file']['name'])
+                                str(opcCurrentPrintJob['job']['file']['name'])  + ';' +
+                                str(opc.rackID)                                 + ';' +
+                                str(opc.xPos)                                   + ';' +
+                                str(opc.yPos)
                                 )
         else:
             opcStatus = "Not connected to Pi!"
             opcStatusString =   (
                                 str(opc.ipAddress) + ";" +
                                 str(printerIsConnected) + ";" +
+                                ';' +
+                                ';' +
+                                ';' +
+                                ';' +
                                 ';' +
                                 ';' +
                                 ';' +
