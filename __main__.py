@@ -26,6 +26,8 @@ path_PrinterCommands = Path(config['Paths']['PrinterCommands']) # Path to printe
 path_Log = Path(config['Paths']['Log'])                         # Where to write the error log
 verbose = config['Settings'].getboolean('Verbose')              # Toggle whether to print all responses to console
 timeoutThreshold = int(config['Settings']['HTTP_timeout'])      # HTTP timeout threshold in seconds
+cycleTime = int(config['Settings']['CycleTime'])                #
+startupAutoConnect = config['Settings'].getboolean('StartupAutoConnect') # Autoconnect to printers when starting script
 
 # Set up logger
 logging.basicConfig(
@@ -215,11 +217,14 @@ def getCommandList():
 MAIN SCRIPT STARTS HERE
 '''
 if __name__ == "__main__":
-    # Upon calling the script, printers are connected, then ran until the script / shell is closed.
+    # Upon calling the script, printers are connected to Pis, then ran until the script / shell is closed.
     importPrinterList()  # Must be run first. Otherwise there won't be any OPCs to work with.
-    connectToPrinters()
-    # Connection time varies between hardware and network configurations. Sleep for at least 10 seconds before starting.
-    sleep(10)
+
+    # Connection time varies between hardware and network configurations.
+    # Printers will usually take around 10 seconds to establish connection to OctoPrint.
+    if startupAutoConnect:
+        connectToPrinters()
+        sleep(10)
 
     while True:
         updatePrinterStatus()
@@ -227,27 +232,40 @@ if __name__ == "__main__":
 
         # Parse and run commands
         for i, opc in enumerate(opcs):
+            ipAddress = commandList[0][i]
+            command = commandList[1][i]
+            argument = commandList[2][i]
+
             # If printer is connected, run commands
             if opc.isPrinterConnected:
-                ipAddress = commandList[0][i]
-                command = commandList[1][i]
-                argument = commandList[2][i]
                 if ipAddress == opc.ipAddress:
 
                     if command == "print":
-                        selectedFile = commandList[2][i]
-                        # Check if the string actually points the files directory
+                        selectedFile = argument
+                        # Check if the string actually points to the files directory
                         if "api/files" in str(selectedFile):
-                            opc.selectPrintJob(commandList[2][i])
+                            opc.selectPrintJob(selectedFile)
                             opc.startPrintJob()
-                            print(ipAddress + ": attempting to print: " + argument)
+                            print(ipAddress + ": attempting to print: " + selectedFile)
 
                     # For external applications,
                     if command == "printRetrieved":
                         opc.printFinished = "false"
 
-            # Commands not related to printers (shutdown, settings, debug)
-            if str(commandList[0][i]).lower == "exit" or str(commandList[0][i]).lower == "shutdown":
+
+            # # # Administrative commands (shutdown, settings, connections, debug) # # #
+            # TODO: Test these functions on running printers
+
+            # Terminate script remotely
+            if "shutdown" or "exit" in ipAddress.lower or command.lower or argument.lower:
                 sys.exit()
 
-        sleep(5) # More than enough, as these actions are not time sensitive.
+            # (Re)connect Pi to printer
+            if command.lower == "connect":
+                if ipAddress == opc.ipAddress:
+                    opc.connectToPrinter()
+                if argument.lower == "all":
+                    connectToPrinters()
+
+
+        sleep(cycleTime) # Slow down cycle time to reduce congestion, as tasks are not really time sensitive.
