@@ -22,6 +22,7 @@ config.read('config.ini')
 
 opcs = list()                                                   # For storing all initialized OctoPrintClient objects
 path_ListOfPrinters = Path(config['Paths']['ListOfPrinters'])   # Path to the list of printer IPs / API keys
+path_PrinterStatus = Path(config['Paths']['PrinterStatus'])     # Path to where to export the printer status
 path_PrinterCommands = Path(config['Paths']['PrinterCommands']) # Path to printer commands from the IPC
 path_Log = Path(config['Paths']['Log'])                         # Where to write the error log
 verbose = config['Settings'].getboolean('Verbose')              # Toggle whether to print all responses to console
@@ -30,8 +31,7 @@ cycleTime = int(config['Settings']['CycleTime'])                #
 startupAutoConnect = config['Settings'].getboolean('StartupAutoConnect') # Autoconnect to printers when starting script
 
 # Set up logger
-logging.basicConfig(
-    filename=path_Log, level=logging.ERROR, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+logging.basicConfig(filename=path_Log, level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
 logger = logging.getLogger(__name__)
 
 def inferCsvFormat(path_csv):
@@ -85,8 +85,8 @@ def importPrinterList():
         usernameList = list(dataframe.username)
         passwordList = list(dataframe.password)
         rackIDlist = list(dataframe.rackID)
-        xPosList = list(dataframe.xPosList)
-        yPosList = list(dataframe.yPosList)
+        xPosList = list(dataframe.xPos)
+        yPosList = list(dataframe.yPos)
 
         # Create an OPC instance for every element in the List Of Printers
         for i in range(len(ipList)):
@@ -96,7 +96,8 @@ def importPrinterList():
 
     except Exception as e:
         logger.error(e)
-        logger.error(print("ListOfPrinters.csv may be missing or of invalid format"))
+        if verbose:
+            print("ListOfPrinters.csv may be missing or of invalid format")
 
 def connectToPrinters():
     '''
@@ -120,75 +121,77 @@ def updatePrinterStatus():
     Also, for testing purposes, write each printer's status to a separate txt file.
     '''
 
-    # Row header structure:
-    # [IP]; [connected]; [printing]; [ready]; [operational]; [pausing]; [paused]; [finished]; [nozzle temp]; [bed temp]; [print job]; [rack ID]; [X pos]; [Y pos]
-    opcStatusFields = ("IP;Connected;Printing;Ready;Operational;Pausing;Paused;Finished;NozzleTemp;BedTemp;PrintJob;RackID,Xpos,Ypos\n")
+    try:
+        # Row header structure:
+        # [IP]; [connected]; [printing]; [ready]; [operational]; [pausing]; [paused]; [finished]; [nozzle temp]; [bed temp]; [print job]; [rack ID]; [X pos]; [Y pos]
+        opcStatusFields = ("IP;Connected;Printing;Ready;Operational;Pausing;Paused;Finished;NozzleTemp;BedTemp;PrintJob;RackID;Xpos;Ypos\n")
 
-    # Set up status CSV & txt
-    path_statusCsv = Path("PrinterStatus/PrinterStatus.csv")
-    statusCsv = open(path_statusCsv, 'w+')  # Clear file before writing
-    statusCsv.write(opcStatusFields)        # Add headers
+        # Set up status CSV & txt
+        statusCsv = open(path_PrinterStatus, 'w+')  # Clear file before writing
+        statusCsv.write(opcStatusFields)            # Add headers
 
-    # Create status string for each connected printer
-    for i, opc in enumerate(opcs):
-        printerIsConnected = opc.isPrinterConnected()
-        if printerIsConnected:
-            opcStatus = opc.getPrinterStatus()
-            opcSJ = json.loads(opcStatus)
-            opcCurrentPrintJob = json.loads(opcs[0].getCurrentPrintJob())
+        # Create status string for each connected printer
+        for i, opc in enumerate(opcs):
+            printerIsConnected = opc.isPrinterConnected()
+            if printerIsConnected:
+                opcStatus = opc.getPrinterStatus()
+                opcSJ = json.loads(opcStatus)
+                opcCurrentPrintJob = json.loads(opcs[0].getCurrentPrintJob())
 
-            # The "finished"-status is a local variable in the client object.
-            # It is only set when "finishing" is true, at the end of each print job.
-            # It is reset by the printer command [printerIP , currentPrint, retrieved]
-            if "true" in str(opcSJ['state']['flags']['finishing']):
-                opc.printFinished = "true"
+                # The "finished"-status is a local variable in the client object.
+                # It is only set when "finishing" is true, at the end of each print job.
+                # It is reset by the printer command [printerIP , currentPrint, retrieved]
+                if "true" in str(opcSJ['state']['flags']['finishing']):
+                    opc.printFinished = "true"
 
-            opcStatusString =   (
-                                str(opc.ipAddress)                              + ';' +
-                                str(printerIsConnected)                         + ';' +
-                                str(opcSJ['state']['flags']['printing'])        + ';' +
-                                str(opcSJ['state']['flags']['ready'])           + ';' +
-                                str(opcSJ['state']['flags']['operational'])     + ';' +
-                                str(opcSJ['state']['flags']['pausing'])         + ';' +
-                                str(opcSJ['state']['flags']['paused'])          + ';' +
-                                opc.printFinished                               + ';' +
-                                str(opcSJ['temperature']['bed']['actual'])      + ';' +
-                                str(opcSJ['temperature']['tool0']['actual'])    + ';' +
-                                str(opcCurrentPrintJob['job']['file']['name'])  + ';' +
-                                str(opc.rackID)                                 + ';' +
-                                str(opc.xPos)                                   + ';' +
-                                str(opc.yPos)
-                                )
-        else:
-            opcStatus = "Not connected to Pi!"
-            opcStatusString =   (
-                                str(opc.ipAddress) + ";" +
-                                str(printerIsConnected) + ";" +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';' +
-                                ';'
-                                )
-        # Append status string to CSV & txt
-        statusCsv.write(opcStatusString + "\n")
-        path_statusTxt = Path("PrinterStatus/" + "printer" + str(i) + ".txt")
-        with open(path_statusTxt, 'w+') as statusTextFile:
-            statusTextFile.write(opcStatusFields + opcStatusString)
+                opcStatusString =   (
+                                    str(opc.ipAddress)                              + ';' +
+                                    str(printerIsConnected)                         + ';' +
+                                    str(opcSJ['state']['flags']['printing'])        + ';' +
+                                    str(opcSJ['state']['flags']['ready'])           + ';' +
+                                    str(opcSJ['state']['flags']['operational'])     + ';' +
+                                    str(opcSJ['state']['flags']['pausing'])         + ';' +
+                                    str(opcSJ['state']['flags']['paused'])          + ';' +
+                                    opc.printFinished                               + ';' +
+                                    str(opcSJ['temperature']['bed']['actual'])      + ';' +
+                                    str(opcSJ['temperature']['tool0']['actual'])    + ';' +
+                                    str(opcCurrentPrintJob['job']['file']['name'])  + ';' +
+                                    str(opc.rackID)                                 + ';' +
+                                    str(opc.xPos)                                   + ';' +
+                                    str(opc.yPos)
+                                    )
+            else:
+                opcStatus = "Not connected to Pi!"
+                opcStatusString =   (
+                                    str(opc.ipAddress) + ";" +
+                                    str(printerIsConnected) + ";" +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';' +
+                                    ';'
+                                    )
 
-        # Print responses if the verbose debugging variable is set to true
+            # Append status string to CSV & txt
+            statusCsv.write(opcStatusString + "\n")
+            # Print responses if the verbose debugging variable is set to true
+            if verbose:
+                print(opc.ipAddress + " printer status: " + opcStatusString)
+
+        # Close CSV to avoid access issues
+        statusCsv.close()
+
+    except Exception as e:
+        logger.error(e)
         if verbose:
-            print(opc.ipAddress + " printer status: " + opcStatusString)
-
-    # Close CSV to avoid access issues
-    statusCsv.close()
+            print(e)
 
 def getCommandList():
     '''
@@ -207,6 +210,7 @@ def getCommandList():
     # Create a 2D list of command data.
     outputList = [ipList, commandList, argumentList]
 
+    # TODO: uncomment when command tests are done and script is ready for deployment
     #open(path_printerCommands, 'w').close() # Clear file after parsing it
 
     return outputList
@@ -215,6 +219,10 @@ def getCommandList():
 
 '''
 MAIN SCRIPT STARTS HERE
+
+From the PrinterCommands.csv, each column (IP, command, argument) is parsed and stored in a list.
+For every cycle, the program checks if there is an IP address matching that of a registered OctoPrint client.
+If there is, the command is read and carried out, using arguments if applicable.
 '''
 if __name__ == "__main__":
     # Upon calling the script, printers are connected to Pis, then ran until the script / shell is closed.
@@ -236,7 +244,7 @@ if __name__ == "__main__":
             command = commandList[1][i]
             argument = commandList[2][i]
 
-            # If printer is connected, run commands
+            # # # If printer is connected, run commands # # #
             if opc.isPrinterConnected:
                 if ipAddress == opc.ipAddress:
 
@@ -252,12 +260,14 @@ if __name__ == "__main__":
                     if command == "printRetrieved":
                         opc.printFinished = "false"
 
-
-            # # # Administrative commands (shutdown, settings, connections, debug) # # #
-            # TODO: Test these functions on running printers
+            #Administrative commands (shutdown, settings, connections, debug)
 
             # Terminate script remotely
-            if "shutdown" or "exit" in ipAddress.lower or command.lower or argument.lower:
+            if "shutdown" or "exit" in ipAddress.lower():
+                msg = "Script shut down by external command"
+                logger.info(msg)
+                if verbose:
+                    print(msg)
                 sys.exit()
 
             # (Re)connect Pi to printer
@@ -266,6 +276,5 @@ if __name__ == "__main__":
                     opc.connectToPrinter()
                 if argument.lower == "all":
                     connectToPrinters()
-
 
         sleep(cycleTime) # Slow down cycle time to reduce congestion, as tasks are not really time sensitive.
