@@ -210,8 +210,7 @@ def getCommandList():
     # Create a 2D list of command data.
     outputList = [ipList, commandList, argumentList]
 
-    # TODO: uncomment when command tests are done and script is ready for deployment
-    #open(path_printerCommands, 'w').close() # Clear file after parsing it
+    open(path_PrinterCommands, 'w').close() # Clear file after parsing it
 
     return outputList
 
@@ -248,7 +247,7 @@ if __name__ == "__main__":
             if opc.isPrinterConnected:
                 if ipAddress == opc.ipAddress:
 
-                    if command == "print":
+                    if command.lower() == "print":
                         selectedFile = argument
                         # Check if the string actually points to the files directory
                         if "api/files" in str(selectedFile):
